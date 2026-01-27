@@ -1,0 +1,912 @@
+beads_seed_spec_version: 1
+project:
+  name: self-correcting-osworld-agent
+  beads_prefix: "sca-"
+  north_star:
+    - "Self-correcting computer-use agent evaluated on OSWorld + OSWorld-MCP"
+    - "SCoRe-style multi-turn online RL for learned recovery, not prompt tricks"
+    - "Benchmark report + failure taxonomy + live demos"
+  operating_rules:
+    - "One issue per agent session; restart after close"
+    - "If >2 minutes, file a Beads issue"
+    - "All deps must be explicit (blocks/parent-child/related/conditional)"
+    - "Every issue has: goal, artifacts, verification commands, done criteria"
+
+workflows:
+
+  - key: WF0
+    title: "Repo foundation, tooling, and CI (Jan 2026-grade)"
+    epics:
+
+      - key: E0
+        title: "E0 — Repo scaffold + developer experience"
+        priority: P0
+        done_when:
+          - "Repo installs cleanly; lint/type/tests run via a single command"
+          - "CI runs lint/type/unit tests on PR"
+          - "Docs include quickstart for OSWorld + OSWorld-MCP"
+        issues:
+
+          - key: T0.1
+            title: "Initialize Python package structure + minimal CLI entrypoints"
+            priority: P0
+            artifacts:
+              - "src/sca/__init__.py"
+              - "src/sca/cli.py (Typer/argparse)"
+              - "pyproject.toml"
+            done_when:
+              - "`python -m sca.cli --help` works"
+              - "Editable install works"
+            verify:
+              - "python -m sca.cli --help"
+
+          - key: T0.2
+            title: "Add lint/format/type tooling + pre-commit hooks"
+            priority: P0
+            artifacts:
+              - ".pre-commit-config.yaml"
+              - "ruff.toml / pyproject tool configs"
+              - "mypy.ini (or pyproject config)"
+            done_when:
+              - "pre-commit runs locally"
+              - "CI will run lint + type"
+            verify:
+              - "pre-commit run -a"
+              - "ruff check ."
+              - "mypy src"
+
+          - key: T0.3
+            title: "Add pytest baseline + test layout"
+            priority: P0
+            artifacts:
+              - "tests/test_smoke.py"
+              - "pytest.ini"
+            done_when:
+              - "pytest runs and passes on CI"
+            verify:
+              - "pytest -q"
+
+          - key: T0.4
+            title: "Add GitHub Actions: lint + type + unit tests"
+            priority: P0
+            artifacts:
+              - ".github/workflows/ci.yml"
+            done_when:
+              - "CI green on PR"
+            verify:
+              - "CI workflow passes"
+
+          - key: T0.5
+            title: "Add reproducibility conventions (seed control, config snapshots, run manifests)"
+            priority: P1
+            artifacts:
+              - "src/sca/utils/repro.py"
+              - "src/sca/logging/run_manifest.py"
+              - "docs/reproducibility.md"
+            done_when:
+              - "Every run writes a manifest with git SHA, config, seeds"
+            verify:
+              - "Run any script; confirm manifest is emitted"
+
+          - key: T0.6
+            title: "Add OSS hygiene: LICENSE, CODE_OF_CONDUCT, CONTRIBUTING, SECURITY"
+            priority: P1
+            artifacts:
+              - "LICENSE"
+              - "CODE_OF_CONDUCT.md"
+              - "CONTRIBUTING.md"
+              - "SECURITY.md"
+            done_when:
+              - "Repo passes basic OSS expectations"
+            verify:
+              - "Files exist"
+
+      - key: E1
+        title: "E1 — Environment provisioning strategy (VM/Docker/AWS-ready)"
+        priority: P0
+        rationale:
+          - "OSWorld supports VM-based and Docker-based hosting paths; make our runner robust across them."
+        issues:
+
+          - key: T1.1
+            title: "Write OSWorld local setup guide (VMware/VirtualBox) with minimal friction"
+            priority: P0
+            artifacts:
+              - "docs/osworld_setup_local.md"
+            done_when:
+              - "A new user can get to 'run one task' without guesswork"
+            notes:
+              - "OSWorld repo documents VMware/VirtualBox flow and Python>=3.10 requirement; cite it in our docs."
+            verify:
+              - "Follow doc on a clean machine (or dry-run checklist)"
+
+          - key: T1.2
+            title: "Write OSWorld Docker/virtualized-platform setup guide + troubleshooting"
+            priority: P0
+            artifacts:
+              - "docs/osworld_setup_docker.md"
+            done_when:
+              - "Clear decision tree: local VM vs virtualized environment path"
+            verify:
+              - "Checklist complete + command snippets included"
+
+          - key: T1.3
+            title: "Create a 'doctor' script for our repo to validate OSWorld prerequisites"
+            priority: P1
+            artifacts:
+              - "scripts/sca_doctor.py"
+              - "docs/sca_doctor.md"
+            done_when:
+              - "Script detects missing deps and points to exact fix"
+            verify:
+              - "python scripts/sca_doctor.py --help"
+
+          - key: T1.4
+            title: "Conditional fallback: if VMware path fails, run Docker path smoke test"
+            priority: P2
+            dependency_type: "conditional_blocks"
+            depends_on_if_failure:
+              - "T1.1"
+            artifacts:
+              - "scripts/osworld_smoke_docker.sh"
+            done_when:
+              - "Fallback path documented and runnable"
+
+  - key: WF1
+    title: "OSWorld adapter + eval-first harness"
+    epics:
+
+      - key: E2
+        title: "E2 — OSWorld adapter layer + minimal runner"
+        priority: P0
+        done_when:
+          - "Can run one OSWorld task end-to-end and capture logs"
+          - "Can run a small suite and produce JSON results"
+        issues:
+
+          - key: T2.1
+            title: "Define core dataclasses: Observation, Action, StepResult, TrajectoryEvent"
+            priority: P0
+            artifacts:
+              - "src/sca/types.py"
+            done_when:
+              - "Types cover screenshot, optional a11y tree, tool state, and metadata"
+            verify:
+              - "pytest -q tests/test_types.py"
+
+          - key: T2.2
+            title: "Implement OSWorldEnvAdapter.reset/step wrapper with typed conversions"
+            priority: P0
+            depends_on: ["T2.1"]
+            artifacts:
+              - "src/sca/envs/osworld/adapter.py"
+            done_when:
+              - "Adapter converts raw OSWorld obs -> Observation"
+              - "Adapter converts Action -> OSWorld action format"
+            verify:
+              - "pytest -q tests/test_osworld_adapter.py"
+
+          - key: T2.3
+            title: "Implement single-task runner CLI: run one task, save artifacts"
+            priority: P0
+            depends_on: ["T2.2"]
+            artifacts:
+              - "src/sca/envs/osworld/run_one.py"
+              - "src/sca/cli.py (command: run-one)"
+            done_when:
+              - "Produces run folder with manifest + trajectory log"
+            verify:
+              - "python -m sca.cli run-one --help"
+
+          - key: T2.4
+            title: "Implement batch runner CLI: run N tasks, aggregate metrics"
+            priority: P0
+            depends_on: ["T2.3"]
+            artifacts:
+              - "src/sca/envs/osworld/run_batch.py"
+              - "src/sca/cli.py (command: run-batch)"
+            done_when:
+              - "Emits results.jsonl + summary.json"
+            verify:
+              - "python -m sca.cli run-batch --help"
+
+          - key: T2.5
+            title: "Implement evaluation hook: call OSWorld execution-based eval scripts and store verdicts"
+            priority: P0
+            depends_on: ["T2.4"]
+            artifacts:
+              - "src/sca/envs/osworld/eval.py"
+            done_when:
+              - "Each episode ends with success/failure + reason"
+            verify:
+              - "Run on a known-easy task; see verdict recorded"
+
+          - key: T2.6
+            title: "Add a deterministic 'mock desktop' unit-test env for CI"
+            priority: P1
+            depends_on: ["T2.1"]
+            artifacts:
+              - "src/sca/envs/mock_desktop/"
+              - "tests/test_agent_loop_mock_env.py"
+            done_when:
+              - "CI can test agent loop without OSWorld VM"
+            verify:
+              - "pytest -q"
+
+      - key: E3
+        title: "E3 — Baseline evaluation and regression harness"
+        priority: P0
+        issues:
+
+          - key: T3.1
+            title: "Define metric schema + JSON outputs (success, steps, walltime, tool stats placeholders)"
+            priority: P0
+            depends_on: ["T2.4"]
+            artifacts:
+              - "src/sca/metrics/schema.py"
+            done_when:
+              - "Batch runner emits metrics conforming to schema"
+            verify:
+              - "pytest -q tests/test_metrics_schema.py"
+
+          - key: T3.2
+            title: "Implement bootstrap CIs for success metrics"
+            priority: P1
+            depends_on: ["T3.1"]
+            artifacts:
+              - "src/sca/metrics/bootstrap.py"
+            done_when:
+              - "Report can output 95% CI for success rate"
+            verify:
+              - "pytest -q tests/test_bootstrap.py"
+
+          - key: T3.3
+            title: "Create smoke task suite definition (tiny subset) for quick iteration"
+            priority: P0
+            artifacts:
+              - "configs/task_suites/smoke.yaml"
+              - "docs/task_suites.md"
+            done_when:
+              - "run-batch supports --suite smoke"
+            verify:
+              - "python -m sca.cli run-batch --suite smoke"
+
+  - key: WF2
+    title: "Agent core loop (GUI + reflection) and baseline policy"
+    epics:
+
+      - key: E4
+        title: "E4 — Action space + safety filters"
+        priority: P0
+        issues:
+
+          - key: T4.1
+            title: "Define GUI action schema (click/type/scroll/hotkey/drag) + JSON serialization"
+            priority: P0
+            depends_on: ["T2.1"]
+            artifacts:
+              - "src/sca/actions/gui.py"
+            done_when:
+              - "Actions validate ranges; serialize/deserialize stable"
+            verify:
+              - "pytest -q tests/test_actions_gui.py"
+
+          - key: T4.2
+            title: "Define Reflection action schema (structured diagnosis + revised plan + next step)"
+            priority: P0
+            depends_on: ["T2.1"]
+            artifacts:
+              - "src/sca/actions/reflection.py"
+              - "docs/reflection_schema.md"
+            done_when:
+              - "Schema is explicit and versioned"
+            verify:
+              - "pytest -q tests/test_actions_reflection.py"
+
+          - key: T4.3
+            title: "Implement action safety filter (deny unsafe OS ops; rate-limit destructive clicks)"
+            priority: P0
+            depends_on: ["T4.1"]
+            artifacts:
+              - "src/sca/agent/safety.py"
+              - "docs/safety.md"
+            done_when:
+              - "Unsafe actions are blocked with a logged reason"
+            verify:
+              - "pytest -q tests/test_safety_filter.py"
+
+          - key: T4.4
+            title: "Add constrained-output utilities for action JSON (schema-first decoding)"
+            priority: P1
+            depends_on: ["T4.1", "T4.2"]
+            artifacts:
+              - "src/sca/actions/constraints.py"
+            done_when:
+              - "Policy outputs are validated; invalid outputs trigger repair path"
+            verify:
+              - "pytest -q tests/test_constraints.py"
+
+      - key: E5
+        title: "E5 — Agent loop + baseline policy (non-RL)"
+        priority: P0
+        issues:
+
+          - key: T5.1
+            title: "Implement AgentLoop(state machine): observe → decide → act/tool/reflect → log"
+            priority: P0
+            depends_on: ["T2.2", "T4.1", "T4.2"]
+            artifacts:
+              - "src/sca/agent/loop.py"
+            done_when:
+              - "Loop runs in mock env tests"
+            verify:
+              - "pytest -q tests/test_agent_loop_mock_env.py"
+
+          - key: T5.2
+            title: "Define Policy interface + adapters (local HF model, remote API stub)"
+            priority: P0
+            depends_on: ["T5.1"]
+            artifacts:
+              - "src/sca/agent/policy_base.py"
+              - "src/sca/models/hf_adapter.py"
+              - "src/sca/models/remote_adapter.py"
+            done_when:
+              - "Swappable policy backends"
+            verify:
+              - "pytest -q tests/test_policy_interface.py"
+
+          - key: T5.3
+            title: "Implement baseline ‘reactive’ policy: vision → short plan → GUI action"
+            priority: P0
+            depends_on: ["T5.2", "T4.4"]
+            artifacts:
+              - "src/sca/agent/baselines/reactive.py"
+            done_when:
+              - "Can take at least one step in OSWorld without crashing"
+            verify:
+              - "python -m sca.cli run-one --policy reactive --dry-run"
+
+          - key: T5.4
+            title: "Implement baseline ‘always-reflect’ policy for instrumentation (reflect every K steps)"
+            priority: P1
+            depends_on: ["T5.2", "T4.2"]
+            artifacts:
+              - "src/sca/agent/baselines/reflect_every_k.py"
+            done_when:
+              - "Reflection schema exercised reliably"
+            verify:
+              - "python -m sca.cli run-one --policy reflect-every-k --help"
+
+          - key: T5.5
+            title: "Implement ‘invalid output repair’ fallback (retry with tighter constraints)"
+            priority: P1
+            depends_on: ["T4.4", "T5.2"]
+            artifacts:
+              - "src/sca/agent/output_repair.py"
+            done_when:
+              - "Bad JSON/tool calls recover without hard-failing episode"
+            verify:
+              - "pytest -q tests/test_output_repair.py"
+
+  - key: WF3
+    title: "Trajectory logging, replay, and debugging UX"
+    epics:
+
+      - key: E6
+        title: "E6 — Full-fidelity logging + replay"
+        priority: P0
+        issues:
+
+          - key: T6.1
+            title: "Implement structured trajectory event log (jsonl) + artifact folder layout"
+            priority: P0
+            depends_on: ["T2.3", "T5.1"]
+            artifacts:
+              - "src/sca/logging/trajectory_logger.py"
+              - "docs/log_format.md"
+            done_when:
+              - "Every step logs obs hashes + action + results + timestamps"
+            verify:
+              - "Run one task; confirm jsonl produced"
+
+          - key: T6.2
+            title: "Save screenshots deterministically (step-indexed, compressed) + dedup by hash"
+            priority: P1
+            depends_on: ["T6.1"]
+            artifacts:
+              - "src/sca/logging/screenshot_store.py"
+            done_when:
+              - "No duplicate frames bloating disk"
+            verify:
+              - "Run task; confirm dedup stats"
+
+          - key: T6.3
+            title: "Implement replay: render trajectory to annotated MP4 (action overlay + reflection text)"
+            priority: P0
+            depends_on: ["T6.2", "T4.1", "T4.2"]
+            artifacts:
+              - "src/sca/logging/replay_to_video.py"
+              - "src/sca/cli.py (command: replay)"
+            done_when:
+              - "Generates video from a completed run"
+            verify:
+              - "python -m sca.cli replay --help"
+
+          - key: T6.4
+            title: "Build a minimal ‘trajectory inspector’ UI (web or terminal) for step-by-step debug"
+            priority: P1
+            depends_on: ["T6.1"]
+            artifacts:
+              - "demos/inspect_trajectory.py (or streamlit/gradio app)"
+            done_when:
+              - "Can scrub steps and view obs/action/reflection"
+            verify:
+              - "Run inspector on a saved run"
+
+  - key: WF4
+    title: "MCP client + OSWorld-MCP integration"
+    epics:
+
+      - key: E7
+        title: "E7 — MCP client (JSON-RPC) + tool schema registry"
+        priority: P0
+        rationale:
+          - "MCP is JSON-RPC 2.0 and standardizes tools/resources/prompts with security guidance."
+        issues:
+
+          - key: T7.1
+            title: "Implement MCP message types + JSON-RPC transport abstraction (stdio first)"
+            priority: P0
+            artifacts:
+              - "src/sca/mcp/jsonrpc.py"
+              - "src/sca/mcp/transports/stdio.py"
+            done_when:
+              - "Can connect to a local MCP server process and exchange requests"
+            verify:
+              - "pytest -q tests/test_mcp_jsonrpc.py"
+
+          - key: T7.2
+            title: "Implement MCP client capability negotiation + server feature discovery (tools/resources/prompts)"
+            priority: P0
+            depends_on: ["T7.1"]
+            artifacts:
+              - "src/sca/mcp/client.py"
+            done_when:
+              - "Client lists tools and validates schemas"
+            verify:
+              - "pytest -q tests/test_mcp_discovery.py"
+
+          - key: T7.3
+            title: "Implement tool schema registry + typed argument validation + result normalization"
+            priority: P0
+            depends_on: ["T7.2"]
+            artifacts:
+              - "src/sca/mcp/tool_registry.py"
+              - "src/sca/mcp/normalize.py"
+            done_when:
+              - "Bad args rejected before sending; results normalized to common envelope"
+            verify:
+              - "pytest -q tests/test_tool_registry.py"
+
+          - key: T7.4
+            title: "Add MCP safety gates: consent hooks + allowlist + redaction for logs"
+            priority: P0
+            depends_on: ["T7.3"]
+            artifacts:
+              - "src/sca/mcp/safety.py"
+              - "docs/mcp_safety.md"
+            done_when:
+              - "Tool calls require explicit ‘allowed’ decision in policy"
+            verify:
+              - "pytest -q tests/test_mcp_safety.py"
+
+          - key: T7.5
+            title: "Add MCP tool-call Action schema + integration into AgentLoop"
+            priority: P0
+            depends_on: ["T5.1", "T7.3"]
+            artifacts:
+              - "src/sca/actions/tool_call.py"
+              - "src/sca/agent/tool_executor.py"
+            done_when:
+              - "Agent can decide tool vs GUI action and execute tool calls"
+            verify:
+              - "pytest -q tests/test_tool_call_action.py"
+
+      - key: E8
+        title: "E8 — OSWorld-MCP runner + tool invocation metrics"
+        priority: P0
+        issues:
+
+          - key: T8.1
+            title: "Add OSWorld-MCP task mode selection + tool registry wiring"
+            priority: P0
+            depends_on: ["T2.4", "T7.5"]
+            artifacts:
+              - "src/sca/envs/osworld_mcp/run_batch_mcp.py"
+              - "src/sca/cli.py (command: run-batch-mcp)"
+            done_when:
+              - "Batch runner can execute OSWorld-MCP tasks with MCP tools enabled"
+            verify:
+              - "python -m sca.cli run-batch-mcp --help"
+
+          - key: T8.2
+            title: "Implement MCP metrics: invocation rate, tool success rate, tool latency, error codes"
+            priority: P0
+            depends_on: ["T8.1", "T3.1"]
+            artifacts:
+              - "src/sca/metrics/mcp_metrics.py"
+            done_when:
+              - "Reports tool invocation rate and errors per episode"
+            verify:
+              - "pytest -q tests/test_mcp_metrics.py"
+
+          - key: T8.3
+            title: "Add a minimal ‘toy MCP server’ for CI tests (echo tool + failing tool)"
+            priority: P1
+            depends_on: ["T7.1"]
+            artifacts:
+              - "tests/mcp_servers/toy_server.py"
+              - "tests/test_mcp_end_to_end.py"
+            done_when:
+              - "CI validates tool invocation + failure handling"
+            verify:
+              - "pytest -q tests/test_mcp_end_to_end.py"
+
+  - key: WF5
+    title: "Failure taxonomy + recovery metrics (core differentiator)"
+    epics:
+
+      - key: E9
+        title: "E9 — Failure taxonomy, detectors, and recovery scoring"
+        priority: P0
+        issues:
+
+          - key: T9.1
+            title: "Define failure taxonomy v1 (GUI grounding, focus, tool misuse, loops, stalled, eval mismatch)"
+            priority: P0
+            artifacts:
+              - "docs/failure_taxonomy_v1.md"
+              - "src/sca/metrics/failure_codes.py"
+            done_when:
+              - "Each code has definition + detection signals + examples"
+            verify:
+              - "Doc review checklist complete"
+
+          - key: T9.2
+            title: "Implement ‘stalled progress’ detector (frame diff + action repetition)"
+            priority: P0
+            depends_on: ["T6.1", "T9.1"]
+            artifacts:
+              - "src/sca/agent/failure_detectors/stalled.py"
+            done_when:
+              - "Flags stall with tunable thresholds and emits failure code"
+            verify:
+              - "pytest -q tests/test_detector_stalled.py"
+
+          - key: T9.3
+            title: "Implement ‘wrong focus/app’ detector (window title / UI cues if available)"
+            priority: P1
+            depends_on: ["T9.1"]
+            artifacts:
+              - "src/sca/agent/failure_detectors/focus.py"
+            done_when:
+              - "Detects focus mismatch on at least one OSWorld workflow"
+            verify:
+              - "Unit tests with mocked signals"
+
+          - key: T9.4
+            title: "Implement ‘tool misuse’ detector (schema mismatch, repeated tool errors, MCP error codes)"
+            priority: P0
+            depends_on: ["T7.3", "T9.1"]
+            artifacts:
+              - "src/sca/agent/failure_detectors/tool_misuse.py"
+            done_when:
+              - "Detects misuse and suggests next repair action category"
+            verify:
+              - "pytest -q tests/test_detector_tool_misuse.py"
+
+          - key: T9.5
+            title: "Implement recovery metrics: recovery rate, time-to-recover, success-after-failure"
+            priority: P0
+            depends_on: ["T9.1", "T6.1", "T3.1"]
+            artifacts:
+              - "src/sca/metrics/recovery.py"
+            done_when:
+              - "Metrics computed from trajectory logs"
+            verify:
+              - "pytest -q tests/test_recovery_metrics.py"
+
+          - key: T9.6
+            title: "Wire detectors into AgentLoop and emit structured ‘failure events’"
+            priority: P0
+            depends_on: ["T5.1", "T9.2", "T9.4"]
+            artifacts:
+              - "src/sca/agent/failure_manager.py"
+            done_when:
+              - "On failure, loop triggers reflection mode and logs failure type"
+            verify:
+              - "Mock env test: injected stall triggers reflection"
+
+  - key: WF6
+    title: "Offline baselines (SFT/IL) to stabilize RL and provide ‘before/after’"
+    epics:
+
+      - key: E10
+        title: "E10 — Trajectory dataset builder + SFT baseline"
+        priority: P0
+        issues:
+
+          - key: T10.1
+            title: "Implement dataset builder: trajectories → supervised examples (obs→action tokens)"
+            priority: P0
+            depends_on: ["T6.1", "T4.1", "T4.2"]
+            artifacts:
+              - "src/sca/training/dataset_builder.py"
+              - "docs/dataset_format.md"
+            done_when:
+              - "Produces a dataset folder with shardable files + manifest"
+            verify:
+              - "python -m sca.cli build-dataset --help"
+
+          - key: T10.2
+            title: "Implement SFT training script (LoRA) with config + checkpointing"
+            priority: P0
+            depends_on: ["T10.1"]
+            artifacts:
+              - "src/sca/training/sft/train.py"
+              - "configs/training/sft.yaml"
+            done_when:
+              - "One-GPU run works on small dataset; saves checkpoint"
+            verify:
+              - "python -m sca.cli train-sft --help"
+
+          - key: T10.3
+            title: "Add evaluation hook: compare baseline vs SFT model on smoke suite"
+            priority: P0
+            depends_on: ["T10.2", "T3.3"]
+            artifacts:
+              - "src/sca/training/sft/eval_after_sft.py"
+            done_when:
+              - "Outputs delta in success + recovery metrics"
+            verify:
+              - "Run eval; confirm report emitted"
+
+          - key: T10.4
+            title: "Write ‘baseline’ report template for later leaderboard automation"
+            priority: P1
+            depends_on: ["T3.1"]
+            artifacts:
+              - "reports/templates/leaderboard.md.j2"
+              - "src/sca/reports/render.py"
+            done_when:
+              - "Can render a markdown table from results.jsonl"
+            verify:
+              - "python -m sca.cli render-report --help"
+
+  - key: WF7
+    title: "Multi-turn RL training (SCoRe-style) for learned self-correction"
+    epics:
+
+      - key: E11
+        title: "E11 — SCoRe-style online RL loop for self-correction"
+        priority: P0
+        rationale:
+          - "SCoRe trains self-correction via multi-turn online RL using self-generated correction traces."
+        issues:
+
+          - key: T11.1
+            title: "Implement ‘attempt → detect failure → reflect → correction attempt’ data generator"
+            priority: P0
+            depends_on: ["T9.6", "T5.2"]
+            artifacts:
+              - "src/sca/training/rl/generate_rollouts.py"
+            done_when:
+              - "Produces multi-turn rollouts with labeled failure points + correction segments"
+            verify:
+              - "python -m sca.cli gen-rollouts --help"
+
+          - key: T11.2
+            title: "Define reward function v1 (success, step penalty, tool success, recovery bonus)"
+            priority: P0
+            depends_on: ["T3.1", "T9.5", "T8.2"]
+            artifacts:
+              - "src/sca/training/rl/rewards.py"
+              - "docs/reward_design_v1.md"
+            done_when:
+              - "Reward components logged per step and per episode"
+            verify:
+              - "Unit test: reward components sum as expected"
+
+          - key: T11.3
+            title: "Implement RL trainer skeleton (policy update loop + KL regularization hooks)"
+            priority: P0
+            depends_on: ["T11.1", "T11.2"]
+            artifacts:
+              - "src/sca/training/rl/trainer.py"
+              - "configs/training/rl.yaml"
+            done_when:
+              - "End-to-end: generate rollouts → compute advantages → update policy"
+            verify:
+              - "python -m sca.cli train-rl --help"
+
+          - key: T11.4
+            title: "Add ‘warm start’ stage (optional): short RL phase to avoid collapse before recovery bonus"
+            priority: P1
+            depends_on: ["T11.3"]
+            artifacts:
+              - "src/sca/training/rl/warm_start.py"
+            done_when:
+              - "Config supports warm-start on/off; logs stability metrics"
+            verify:
+              - "Run a tiny training job; confirm stages executed"
+
+          - key: T11.5
+            title: "Add rollout parallelism (multi-env) + async logging"
+            priority: P1
+            depends_on: ["T11.1"]
+            artifacts:
+              - "src/sca/training/rl/rollout_pool.py"
+            done_when:
+              - "Can run N env workers; merges trajectories deterministically"
+            verify:
+              - "Local run: 2 workers produce combined dataset"
+
+          - key: T11.6
+            title: "Implement ablation switches: no-reflection, prompted-reflection, learned-reflection"
+            priority: P1
+            depends_on: ["T11.3", "T4.2"]
+            artifacts:
+              - "configs/ablations/*.yaml"
+              - "docs/ablations.md"
+            done_when:
+              - "Ablations runnable and clearly documented"
+            verify:
+              - "python -m sca.cli train-rl --config ablations/no_reflection.yaml"
+
+          - key: T11.7
+            title: "Add ‘behavior collapse’ monitors (diversity of corrections, entropy, repeated text)"
+            priority: P1
+            depends_on: ["T11.3"]
+            artifacts:
+              - "src/sca/training/rl/monitors.py"
+            done_when:
+              - "Trainer emits warnings/metrics when collapse suspected"
+            verify:
+              - "Unit tests on synthetic rollouts"
+
+  - key: WF8
+    title: "Benchmarking, reporting, and portfolio-grade artifacts"
+    epics:
+
+      - key: E12
+        title: "E12 — Leaderboard-style reports (OSWorld + OSWorld-MCP) + failure analysis"
+        priority: P0
+        issues:
+
+          - key: T12.1
+            title: "Implement unified evaluation runner: OSWorld + OSWorld-MCP with consistent output schema"
+            priority: P0
+            depends_on: ["T2.4", "T8.1", "T3.1"]
+            artifacts:
+              - "src/sca/eval/unified_runner.py"
+              - "src/sca/cli.py (command: eval)"
+            done_when:
+              - "One command runs both benchmarks and saves results"
+            verify:
+              - "python -m sca.cli eval --help"
+
+          - key: T12.2
+            title: "Generate leaderboard markdown: success, steps, tool invocation, recovery metrics + CIs"
+            priority: P0
+            depends_on: ["T12.1", "T3.2", "T9.5", "T8.2"]
+            artifacts:
+              - "reports/leaderboard.md (generated)"
+              - "src/sca/reports/leaderboard.py"
+            done_when:
+              - "Report renders cleanly on GitHub"
+            verify:
+              - "python -m sca.cli render-leaderboard --help"
+
+          - key: T12.3
+            title: "Failure taxonomy report: per-category rates + top exemplars with replay links"
+            priority: P0
+            depends_on: ["T9.5", "T6.3"]
+            artifacts:
+              - "reports/failure_taxonomy.md (generated)"
+              - "src/sca/reports/failure_taxonomy.py"
+            done_when:
+              - "Report includes example replays and counts"
+            verify:
+              - "python -m sca.cli render-failure-report --help"
+
+          - key: T12.4
+            title: "Add ‘model card’ template for trained checkpoints (data, training, limitations, safety)"
+            priority: P1
+            depends_on: ["T11.3"]
+            artifacts:
+              - "docs/model_card_template.md"
+              - "docs/models/<run_id>.md"
+            done_when:
+              - "At least one trained artifact has a filled model card"
+            verify:
+              - "Markdown present and complete"
+
+  - key: WF9
+    title: "Live demos + walkthrough documentation (no slides)"
+    epics:
+
+      - key: E13
+        title: "E13 — Live demo suite (baseline vs self-correcting) + recording"
+        priority: P0
+        issues:
+
+          - key: T13.1
+            title: "Build live demo runner: run one task with on-screen overlays (click point, tool calls, reflection)"
+            priority: P0
+            depends_on: ["T6.3", "T5.1", "T7.5"]
+            artifacts:
+              - "demos/live_run.py"
+              - "docs/demo_live_run.md"
+            done_when:
+              - "User can watch decisions step-by-step; overlays visible"
+            verify:
+              - "python demos/live_run.py --help"
+
+          - key: T13.2
+            title: "Implement ‘failure injection’ mode to force an error mid-task (for signature demo)"
+            priority: P0
+            depends_on: ["T13.1"]
+            artifacts:
+              - "demos/failure_injection.py"
+              - "docs/demo_failure_injection.md"
+            done_when:
+              - "Demo reliably causes a recoverable failure and shows recovery"
+            verify:
+              - "python demos/failure_injection.py --help"
+
+          - key: T13.3
+            title: "Create MCP showcase demo: tasks where tool usage beats GUI-only baseline"
+            priority: P0
+            depends_on: ["T8.1", "T13.1"]
+            artifacts:
+              - "demos/mcp_showcase.py"
+              - "docs/demo_mcp_showcase.md"
+            done_when:
+              - "Demonstrates tool calls and logs invocation stats"
+            verify:
+              - "python demos/mcp_showcase.py --help"
+
+          - key: T13.4
+            title: "Add recording scripts (ffmpeg/VNC capture) + ‘one command to record demo’"
+            priority: P1
+            depends_on: ["T13.1"]
+            artifacts:
+              - "scripts/record_demo.sh"
+              - "docs/recording.md"
+            done_when:
+              - "A reproducible recording path exists with exact commands"
+            verify:
+              - "scripts/record_demo.sh --help"
+
+          - key: T13.5
+            title: "Write end-to-end walkthrough: setup → baseline eval → train → eval → reproduce report"
+            priority: P0
+            depends_on: ["T12.2", "T11.3", "T1.1"]
+            artifacts:
+              - "README.md (top-level, portfolio quality)"
+              - "docs/walkthrough_end_to_end.md"
+            done_when:
+              - "A reader can reproduce key artifacts without tribal knowledge"
+            verify:
+              - "Docs lint (links, commands) pass"
+
+          - key: T13.6
+            title: "Add ‘Run Your Own Task’ script (interactive prompt → selects task → runs agent → saves replay)"
+            priority: P1
+            depends_on: ["T2.3", "T6.3"]
+            artifacts:
+              - "demos/run_your_own_task.py"
+            done_when:
+              - "Non-expert can run a demo without editing code"
+            verify:
+              - "python demos/run_your_own_task.py --help"
