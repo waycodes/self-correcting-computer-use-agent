@@ -30,13 +30,27 @@ class BatchResult:
             self.failed += 1
 
     def to_summary(self) -> dict[str, Any]:
-        """Generate summary statistics."""
+        """Generate summary statistics.
+
+        ``success_rate`` divides by ``total_tasks``, the number of tasks the batch
+        was asked to run, not by ``completed``. A task lost to a crash is a task
+        the agent did not complete, so excluding it from the denominator inflates
+        the reported rate by an amount that grows with harness flakiness.
+
+        ``avg_steps`` keeps the ``completed`` denominator on purpose: it is a
+        per-attempt cost, and a task that never ran contributed no steps, so
+        averaging it over requested tasks would understate cost rather than
+        correct a bias. ``not_run`` is reported so the gap is visible instead of
+        inferred from the difference between two other fields.
+        """
+        attempted = max(self.total_tasks, self.completed)
         return {
             "total_tasks": self.total_tasks,
             "completed": self.completed,
+            "not_run": max(attempted - self.completed, 0),
             "success": self.success,
             "failed": self.failed,
-            "success_rate": self.success / self.completed if self.completed else 0,
+            "success_rate": self.success / attempted if attempted else 0,
             "avg_steps": self.total_steps / self.completed if self.completed else 0,
             "total_reward": self.total_reward,
         }
